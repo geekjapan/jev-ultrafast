@@ -1,7 +1,7 @@
-# Microsoft Decision 1 browser agent
+# Decision browser agent
 
 This fork of [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) uses
-Microsoft Decision 1 in Azure Foundry to select browser operations and targets.
+Microsoft Decision 1 in Azure Foundry (default) or OpenAI Decisions to select browser operations and targets.
 A separate OpenAI-compatible LLM supplies text for `TYPE_TEXT`. No Jev API key or
 TypeSafe requests are needed. The Python package and `jev` command keep their
 upstream names.
@@ -24,7 +24,7 @@ Every observation produces a new element table:
 The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
 
 ```text
-                      one Azure request
+                      one decision request
                      ┌───────────────────────────┐
 page → element table → operation                 │
                      │ click_target              │
@@ -59,6 +59,25 @@ Use your Azure resource root URL for `AZURE_ENDPOINT`, for example
 to your deployment name. Its default is `decision-1`. The client calls
 `/providers/microsoft/v1/systemone` and authenticates with the `api-key` header.
 Keep credentials in the ignored `.env` file or environment, never in source.
+
+To use [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions), set:
+
+```dotenv
+DECISION_PROVIDER=openai
+OPENAI_API_KEY=your-openai-key
+OPENAI_DECISION_MODEL=gpt-6-luna
+```
+
+Azure remains the default (`DECISION_PROVIDER=azure`); other provider values fail
+before a request. OpenAI uses `POST https://api.openai.com/v1/decisions` with Bearer
+authentication, a JSON-encoded state in `input`, and named choice questions.
+Azure uses its existing `state` and question-map contract. Both select from the
+same observed targets, resolve a sole compatible target locally, and validate
+only the selected operation's target. The trace retains the actual request body,
+raw provider answers, returned model, and usage. OpenAI and Azure decision keys
+are never used for the independent text helper; `TEXT_MODEL_API_KEY` is still
+required for `TYPE_TEXT`. The inspector displays the configured provider/model.
+See the [OpenAI request schema](https://developers.openai.com/api/reference/resources/decisions/methods/create).
 
 For Microsoft Entra ID, leave `AZURE_API_KEY` empty and supply a current token:
 
@@ -109,7 +128,7 @@ uv run --env-file .env python examples/run.py \
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
-- **No screenshots in the default agent loop.** Decision 1 consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
+- **No screenshots in the default agent loop.** The decision provider consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
@@ -153,6 +172,7 @@ uv run ruff check .
 uv run pytest
 node --check jev_ultrafast/static/app.js
 node --check jev_ultrafast/snapshot.js
+node tests/check_demo_ui.cjs
 uv build
 ```
 

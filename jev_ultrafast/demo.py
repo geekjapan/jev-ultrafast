@@ -1,4 +1,4 @@
-"""Loopback-only inspector for the Microsoft Decision 1 browser agent."""
+"""Loopback-only inspector for the decision browser agent."""
 
 import atexit
 import json
@@ -10,6 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from .agent import Agent
+from .model import decision_settings
 from .questions import MAX_STEPS
 
 ROOT = Path(__file__).parent
@@ -31,8 +32,9 @@ def load_environment():
 
 def response_state():
     state = AGENT.snapshot() if AGENT else {"page": None, "status": "idle", "history": [], "decision": None}
-    return {**state, "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS,
-            "decision_model": os.environ.get("AZURE_DEPLOYMENT_NAME", "decision-1")}
+    provider, decision_model = decision_settings()
+    return {**state, "decision_provider": provider, "decision_model": decision_model,
+            "text_model": os.environ.get("TEXT_MODEL", "deepseek-chat"), "max_steps": MAX_STEPS}
 
 
 def close_browser():
@@ -133,7 +135,7 @@ def main():
     load_environment()
     atexit.register(close_browser)
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"Microsoft Decision 1 browser agent: {ORIGIN}", flush=True)
+    print(f"decision browser agent: {ORIGIN}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

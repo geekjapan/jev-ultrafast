@@ -68,7 +68,8 @@ async function perform(fn, label) {
 }
 function render() {
   if (!state) return;
-  $("decision-model").textContent = state.decision_model;
+  $("decision-model").textContent = `${state.decision_provider} · ${state.decision_model}`;
+  document.title = `${state.decision_provider} · ${state.decision_model} · Browser Use`;
   $("helper").textContent = `Text helper · ${state.text_model}`;
   $("plan").innerHTML = (state.plan || [])
     .map(
@@ -84,7 +85,7 @@ function render() {
     idle: "Ready to explore",
     ready: "Page observed · ready for a decision",
     predicted: "Choice ready · inspect or execute",
-    done: "Decision 1 reports complete · inspect the page",
+    done: "Model reports complete · inspect the page",
     blocked: "Stopped · no supported next action",
   };
   $("status").textContent = labels[state.status] || state.status;
@@ -107,7 +108,7 @@ function render() {
   $("confidence").textContent = singleTarget ? "Only target" :
     d?.target_confidence != null ? percent(d.target_confidence) : "—";
   $("completion").textContent = d ? d.operation : "—";
-  $("ranking-note").textContent = singleTarget ? "Only compatible target" : d ? "Ranked by Decision 1" : "Unranked";
+  $("ranking-note").textContent = singleTarget ? "Only compatible target" : d ? "Ranked by model" : "Unranked";
   const op = Object.entries(d?.operation_probabilities || {}).sort((a,b)=>b[1]-a[1]);
   $("operation-choices").innerHTML = op.map(([name,p]) =>
     `<span class="operation-choice ${name === d.operation ? 'best' : ''}">${escape(name)} <b>${percent(p)}</b></span>`).join('');
@@ -161,7 +162,7 @@ $("scenario").addEventListener("change", () => {
   $("goal").value = goals[$("scenario").value];
 });
 $("choose").addEventListener("click", () =>
-  perform(() => call("predict"), "Decision 1 is comparing the actions…"),
+  perform(() => call("predict"), "Decision model is comparing the actions…"),
 );
 $("execute").addEventListener("click", () =>
   perform(
@@ -232,7 +233,7 @@ $("download").addEventListener("click", () => {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "azure-decision-browser-trace.json";
+  a.download = "decision-browser-trace.json";
   a.click();
   URL.revokeObjectURL(url);
 });

@@ -1,7 +1,7 @@
-# Microsoft Decision 1 browser agent
+# Decision browser agent
 
 This fork of [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) uses
-Microsoft Decision 1 in Azure Foundry to select browser operations and targets.
+Microsoft Decision 1 in Azure Foundry (default) or OpenAI Decisions to select browser operations and targets.
 A separate OpenAI-compatible LLM supplies text for `TYPE_TEXT`. No Jev API key or
 TypeSafe requests are needed. The Python package and `jev` command keep their
 upstream names.
@@ -24,7 +24,7 @@ Every observation produces a new element table:
 The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
 
 ```text
-                      one Azure request
+                      one decision request
                      ┌───────────────────────────┐
 page → element table → operation                 │
                      │ click_target              │
@@ -59,6 +59,25 @@ Use your Azure resource root URL for `AZURE_ENDPOINT`, for example
 to your deployment name. Its default is `decision-1`. The client calls
 `/providers/microsoft/v1/systemone` and authenticates with the `api-key` header.
 Keep credentials in the ignored `.env` file or environment, never in source.
+
+To use [OpenAI Decisions](https://developers.openai.com/api/docs/guides/decisions), set:
+
+```dotenv
+DECISION_PROVIDER=openai
+OPENAI_API_KEY=your-openai-key
+OPENAI_DECISION_MODEL=gpt-6-luna
+```
+
+Azure remains the default (`DECISION_PROVIDER=azure`); other provider values fail
+before a request. OpenAI uses `POST https://api.openai.com/v1/decisions` with Bearer
+authentication, a JSON-encoded state in `input`, and named choice questions.
+Azure uses its existing `state` and question-map contract. Both select from the
+same observed targets, resolve a sole compatible target locally, and validate
+only the selected operation's target. The trace retains the actual request body,
+raw provider answers, returned model, and usage. OpenAI and Azure decision keys
+are never used for the independent text helper; `TEXT_MODEL_API_KEY` is still
+required for `TYPE_TEXT`. The inspector displays the configured provider/model.
+See the [OpenAI request schema](https://developers.openai.com/api/reference/resources/decisions/methods/create).
 
 For Microsoft Entra ID, leave `AZURE_API_KEY` empty and supply a current token:
 
@@ -109,7 +128,7 @@ uv run --env-file .env python examples/run.py \
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
-- **No screenshots in the default agent loop.** Decision 1 consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
+- **No screenshots in the default agent loop.** The decision provider consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
@@ -153,10 +172,81 @@ uv run ruff check .
 uv run pytest
 node --check jev_ultrafast/static/app.js
 node --check jev_ultrafast/snapshot.js
+node tests/check_demo_ui.cjs
 uv build
 ```
 
 Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
+
+### Verify both Decision implementations
+
+With the matching `geekjapan/browser-use` checkout beside this repository:
+
+```bash
+python3 verification/run.py --browser-use ../browser-use
+```
+
+The suite combines both existing regression suites, bounded enumeration of real Python code, isolated Chromium workflows, inspector checks, and deliberate broken-code variants. It does not call paid APIs or use the user's Chrome session. Results and the feature matrix are written to `artifacts/verification/REPORT.md` and `report.json`; any skipped, missing, failed, or undetected mutation check prevents success.
+
+The scope is the existing eight-operation Decision integrations, not the entire generative Browser Use Agent. Current findings remain failing tests; see [verification/FINDINGS.md](verification/FINDINGS.md). Source synchronization and precise bounds are documented in the [project verification skill](.agents/skills/verify-decision-stack/SKILL.md).
+
+### 別のPCへ検証スキルとテストを導入する
+
+このリポジトリには、実行用の `verify-decision-stack` スキルとテストスイートを同梱しています。スキルを生成した `create-formal-verification-skill` を別途インストールする必要はありません。
+
+1. Git、uv、Node.js、Google ChromeまたはChromiumを用意します。macOSとWindowsで実行確認済みです。Linuxでの動作は未確認です。
+2. 以下のように、両方の **geekjapanフォーク** を同じ親フォルダーへ取得します。Decision API対応は現時点でこの機能ブランチにあるため、`main` ではなく指定ブランチを使います。
+
+   ```bash
+   mkdir decision-stack
+   cd decision-stack
+   git clone --branch feat/openai-decisions-api https://github.com/geekjapan/browser-use.git
+   git clone --branch feat/openai-decisions-api https://github.com/geekjapan/jev-ultrafast.git
+   uv python install 3.12
+   uv lock --project browser-use
+   uv sync --frozen --project browser-use
+   uv sync --frozen --project jev-ultrafast
+   ```
+
+   browser-useは `uv.lock` をGit管理していないため、初回だけ `uv lock` で生成します。解決される依存バージョンは導入時点に依存します。生成したロックを保持し、以降の実行は `--frozen` を使ってください。各検証結果にはロックのハッシュと実行時の主要バージョンが記録されます。
+
+   Chrome/Chromiumがない場合は、Browser Useの既存インストールコマンドでChromiumを取得できます。
+
+   ```bash
+   uv run --project browser-use browser-use install
+   ```
+
+3. `jev-ultrafast` フォルダーで検証を実行します。クラウドアカウント、APIキー、`.env` は不要です。初回は依存パッケージのダウンロードにネット接続が必要です。
+
+   ```bash
+   cd jev-ultrafast
+   uv run --no-project --python 3.12 python verification/run.py --browser-use ../browser-use
+   ```
+
+   テスト専用のブラウザープロファイルを作成するため、既存のChromeプロファイルをコピーする必要はありません。結果は `artifacts/verification/REPORT.md` と `report.json` に出力されます。両方のフォークを更新した修正版では347件が成功し、終了コードは0になります。古いbrowser-useではドロップダウンの回帰テストが失敗するため、[修正記録](verification/FINDINGS.md)と使用中のコミットを確認してください。その他の失敗は個別のログで確認してください。
+
+4. コーディングエージェントには、このリポジトリを作業フォルダーとして開き、`.agents/skills/verify-decision-stack/SKILL.md` を読んで検証するよう指示します。スキル一覧から見つからない場合も、このファイルを直接指定できます。ファイル内の手順と `verification/` が一組なので、`SKILL.md` だけを別の場所へコピーしないでください。
+
+配置先が隣接していない場合は、`--browser-use` に実際のチェックアウト先を指定します。更新時は両方のフォークを更新し、スキルの「Source synchronization」にある確認済みコミットと差分を照合してから再実行してください。上流の `browser-use/*` リポジトリへのpushや変更は不要です。
+
+**秘密情報を持ち込まないこと:** `.env`、`.env.*`（公開用の `.env.example` を除く）、APIキー、トークン、Cookie、ブラウザープロファイル、`.venv`、`artifacts/`、個人のエージェント設定を別PCへの共有物やGitコミットに含めないでください。この検証で使う認証文字列はテスト用のダミーです。実サービスへ接続する場合の資格情報は、各PCで別途安全に設定してください。
+
+### Windowsでの起動
+
+前述の準備を終えたら、リポジトリ内で以下を実行します。起動スクリプトはUTF-8を指定し、Scoopのショートカットが壊れている場合もインストール済みのuv本体を探します。OS全体の設定は変更しません。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows.ps1 -Mode verify
+```
+
+実APIを使う画面は、Git管理外の `%USERPROFILE%\.config\decision-stack\.env` に資格情報を設定してから起動します。このファイルは利用ユーザーとSYSTEMだけが読めるよう権限を制限してください。ファイルの内容をGitや実行ログへ出力しないでください。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows.ps1 -Mode demo -Provider openai
+# または -Provider azure
+```
+
+サーバー起動後、`http://127.0.0.1:8766` を開きます。同時に起動する画面は1つにしてください。デモは一時プロファイルのChromeを使用し、通常のChromeプロファイルとは分離します。終了はCtrl+Cです。OpenAIの入力補助モデルを使用する場合は `TEXT_MODEL_BASE_URL=https://api.openai.com/v1`、`TEXT_MODEL_REASONING=none` と、利用可能な `TEXT_MODEL` を設定します。
 
 ---
 

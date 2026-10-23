@@ -30,7 +30,8 @@ def page():
 
 
 def choice(ids, selected):
-    return {"choice": selected, "confidence": 1.0, "probabilities": {i: float(i == selected) for i in ids}}
+    return {"type": "choice", "choice": selected, "confidence": 1.0,
+            "probabilities": {i: float(i == selected) for i in ids}}
 
 
 def decision(action="e1"):
@@ -60,7 +61,7 @@ def test_invalid_choice_is_rejected(mutation):
         a["choice"] = "b"
     else:
         a["confidence"] = 5
-    with pytest.raises(ValueError, match="Invalid TypeSafe"):
+    with pytest.raises(ValueError, match="Invalid decision response"):
         model.validate_choice(a, {"a", "b"})
 
 
@@ -88,12 +89,13 @@ def test_all_heads_are_one_request_and_only_matching_head_executes(monkeypatch):
             },
         }
 
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setenv("AZURE_API_KEY", "test")
+    monkeypatch.setenv("AZURE_ENDPOINT", "https://resource.cognitiveservices.azure.com")
     monkeypatch.setattr(model, "post_json", post)
     d = model.choose(page(), "Find a book", [])
     assert len(calls) == 1
     assert d["operation"] == "TYPE_TEXT" and d["target"] == "1" and d["choice"] == "e1"
-    assert set(calls[0]["questions"]) == {"operation", "click_target", "type_text_target"}
+    assert set(calls[0]["questions"]) == {"operation", "click_target"}
 
 
 def test_click_cannot_consume_a_text_target(monkeypatch):
@@ -107,9 +109,10 @@ def test_click_cannot_consume_a_text_target(monkeypatch):
             },
         }
 
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setenv("AZURE_API_KEY", "test")
+    monkeypatch.setenv("AZURE_ENDPOINT", "https://resource.cognitiveservices.azure.com")
     monkeypatch.setattr(model, "post_json", post)
-    with pytest.raises(ValueError, match="Invalid TypeSafe"):
+    with pytest.raises(ValueError, match="Invalid decision response"):
         model.choose(page(), "Find a book", [])
 
 
@@ -123,9 +126,10 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
     def post(_url, _key, body):
         questions = body["questions"]
         target = questions["click_target"]
-        assert target["criteria"]["1"]["checked"] == "true"
-        assert target["criteria"]["1"]["selected"] is False
-        assert questions["operation"]["instructions"]["rules"] in target["instructions"]["rules"]
+        assert json.loads(target["criteria"]["1"])["checked"] == "true"
+        assert json.loads(target["criteria"]["1"])["selected"] is False
+        rules = json.loads(questions["operation"]["instructions"])["rules"]
+        assert rules in json.loads(target["instructions"])["rules"]
         return {
             "model": "test",
             "answers": {
@@ -134,7 +138,8 @@ def test_target_head_receives_control_state_and_full_next_step_rules(monkeypatch
             },
         }
 
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test")
+    monkeypatch.setenv("AZURE_API_KEY", "test")
+    monkeypatch.setenv("AZURE_ENDPOINT", "https://resource.cognitiveservices.azure.com")
     monkeypatch.setattr(model, "post_json", post)
     d = model.choose(p, "Search with free cancellation", [])
     assert d["choice"] == "e3"

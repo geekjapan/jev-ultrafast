@@ -1,20 +1,13 @@
-<img src="docs/banner.svg" alt="Jev Ultrafast · Browser Use × TypeSafe" width="100%" />
+# Microsoft Decision 1 browser agent
 
-# Jev Ultrafast ⚡
+This fork of [jev-ultrafast](https://github.com/browser-use/jev-ultrafast) uses
+Microsoft Decision 1 in Azure Foundry to select browser operations and targets.
+A separate OpenAI-compatible LLM supplies text for `TYPE_TEXT`. No Jev API key or
+TypeSafe requests are needed. The Python package and `jev` command keep their
+upstream names.
 
-> [!IMPORTANT]
-> **The Browser Use Cloud waitlist is open.** Get early access to ultrafast browser agents in the cloud.
-> **[Join the waitlist →](https://browser-use.com/ultrafast?utm_source=github&utm_medium=readme&utm_campaign=jev-ultrafast)**
-
-**A browser agent with a dynamic, indexed action space.**
-
-Give it one goal. [TypeSafe's Jev](https://docs.typesafe.ai/introduction) picks an operation and an element. A small LLM writes text only when the operation is `TYPE_TEXT`.
-
-**Zürich → London on Google Flights in 7.1 seconds.** One natural-language goal, actual text generation, and loading waits included.
-
-<a href="docs/demo.mp4"><img src="docs/demo.gif" alt="A real Google Flights search at 1× speed, with generated city names and dynamic operation/target decisions" width="100%" /></a>
-
-[Watch the MP4](docs/demo.mp4) · [Measurements](docs/performance.md) · [Read the loop](jev_ultrafast/agent.py)
+The browser runs through Browser Harness. This is separate from the standard
+`browser-use` Agent, which expects a generative model.
 
 ## The action space
 
@@ -31,7 +24,7 @@ Every observation produces a new element table:
 The operations are `CLICK`, `TYPE_TEXT`, `SELECT`, `SCROLL_UP`, `SCROLL_DOWN`, `WAIT`, `DONE`, and `BLOCKED`. Only supported operations and targets are offered.
 
 ```text
-                      one TypeSafe request
+                      one Azure request
                      ┌───────────────────────────┐
 page → element table → operation                 │
                      │ click_target              │
@@ -46,20 +39,42 @@ page → element table → operation                 │
                    small LLM → text → browser
 ```
 
-Target questions are speculative. If the operation is `CLICK`, only `click_target` can execute. Two decisions, **one network round trip**. Each target head contains only compatible elements. Native dropdown choices carry an observed element/option index.
+Target questions are speculative. If the operation is `CLICK`, only `click_target` can execute. Two decisions, **one network round trip**. Each target head contains only compatible elements. A single compatible target is resolved locally; the inspector labels it as the only target rather than a model confidence. Native dropdown choices carry an observed element/option index.
 
 There are no site-specific action scripts or prepared field strings in the policy. The Flights example supplies a goal and independently verifies the outcome. The screenshot renderer adds labels afterward; it does not drive the browser.
 
 ## Try it
 
 ```bash
-git clone https://github.com/browser-use/jev-ultrafast.git
+git clone https://github.com/geekjapan/jev-ultrafast.git
 cd jev-ultrafast
 uv sync
 cp .env.example .env
-# Add TYPESAFE_API_KEY and TEXT_MODEL_API_KEY.
+# Set AZURE_ENDPOINT, AZURE_API_KEY, and TEXT_MODEL_API_KEY.
 uv run jev
 ```
+
+Use your Azure resource root URL for `AZURE_ENDPOINT`, for example
+`https://your-resource.cognitiveservices.azure.com`. Set `AZURE_DEPLOYMENT_NAME`
+to your deployment name. Its default is `decision-1`. The client calls
+`/providers/microsoft/v1/systemone` and authenticates with the `api-key` header.
+Keep credentials in the ignored `.env` file or environment, never in source.
+
+For Microsoft Entra ID, leave `AZURE_API_KEY` empty and supply a current token:
+
+```bash
+export AZURE_ENTRA_TOKEN="$(az account get-access-token \
+  --resource https://cognitiveservices.azure.com --query accessToken -o tsv)"
+uv run jev
+```
+
+Refresh the token when it expires. If both credentials are set, the API key wins.
+See [Microsoft's deployment and authentication guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision).
+
+A deployment limited to one request per minute cannot run the agent continuously.
+Configure enough request capacity before an automatic run. On HTTP 429, the client
+stops without executing an action. Wait for quota to reset, then choose again;
+page freshness is checked before the next prediction and execution.
 
 Open **http://127.0.0.1:8766** and click **Start demo → Run automatically**. The inspector shows numbered elements, operation probabilities, target probabilities, and executed actions. **Choose next** pauses before execution.
 
@@ -94,7 +109,7 @@ uv run --env-file .env python examples/run.py \
 ## Why it moves
 
 - **One request per decision cycle.** Operation and target heads share the same observed state.
-- **No screenshots in the default agent loop.** Jev consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
+- **No screenshots in the default agent loop.** Decision 1 consumes structured state. The inspector opts into screenshots; the video uses a separate continuous screencast.
 - **One browser call per snapshot.** Read visible controls, their names, values, and text atomically. Keep references to the actual DOM nodes.
 - **Validate the selected target.** Clicks check the document, form values, target, and nearby context. Animation alone does not force another prediction. Resolve current geometry and reject covered controls before input.
 - **Wait for useful state.** After typing into a combobox, wait for visible suggestions, capped at 200 ms. Other interactions get at most two animation frames or 50 ms. These reads happen after execution is logged.
@@ -115,7 +130,13 @@ Every executed target is resolved from an observed node. The executor rechecks p
 | [questions.py](jev_ultrafast/questions.py) | Model instructions |
 | [demo.py](jev_ultrafast/demo.py) | Local inspector |
 
-## Evidence and limits
+## Upstream Jev evidence and limits
+
+The video and measurements below were produced upstream with Jev. They do not
+measure this fork or Microsoft Decision 1. No Azure speedup or browser-task
+success rate is established by those results.
+
+<a href="docs/demo.mp4"><img src="docs/demo.gif" alt="Upstream Jev Google Flights demonstration" width="100%" /></a>
 
 The current video is a **7,073 ms** Google Flights run. Timing starts after initial page observation and includes model calls, generated text, browser work, stale decisions, and loading waits. A fresh independent check verifies the one-way setting, Zürich, London, September 20, 2026, and visible flight options. The video plays at 1×, with no opening hold and a 0.5-second final hold.
 

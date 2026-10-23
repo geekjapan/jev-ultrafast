@@ -1,9 +1,10 @@
-"""TypeSafe makes choices; an optional small OpenAI-compatible model writes field values."""
+"""Microsoft Decision 1 makes choices; an OpenAI-compatible model writes field values."""
 
 import json
 import math
 import os
 import time
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -12,24 +13,33 @@ from .questions import NEXT_ACTION, TARGET, TEXT_VALUE
 CLIENT = httpx.Client(http2=True, timeout=25)
 
 
-def post_json(url, key, body):
+def post_json(url, headers, body):
     for attempt in range(3):
         try:
-            response = CLIENT.post(url, json=body, headers={"Authorization": f"Bearer {key}"})
+            response = CLIENT.post(url, json=body, headers=headers)
         except httpx.HTTPError:
             raise RuntimeError("Model connection failed; no action executed.") from None
-        if response.status_code in {429, 529, 503} and attempt < 2:
+        if response.status_code == 429:
+            raise RuntimeError("Model rate limit reached; wait for quota to reset, then observe and choose again.")
+        if response.status_code in {529, 503} and attempt < 2:
             time.sleep(0.5 * 2**attempt)
             continue
         if response.is_error:
             raise RuntimeError(f"Model provider returned HTTP {response.status_code}; no action executed.")
-        return response.json()
+        try:
+            return response.json()
+        except ValueError:
+            raise ValueError("Invalid model response; no action executed.") from None
     raise RuntimeError("Model unavailable")
 
 
 def validate_choice(answer, ids):
     try:
+        if not isinstance(answer, dict) or answer.get("type") != "choice":
+            raise ValueError()
         probabilities = answer["probabilities"]
+        if not isinstance(probabilities, dict):
+            raise ValueError()
         numbers = [*probabilities.values(), answer["confidence"]]
         valid = (
             answer["choice"] in ids
@@ -41,7 +51,7 @@ def validate_choice(answer, ids):
     except (KeyError, TypeError, ValueError):
         valid = False
     if not valid:
-        raise ValueError("Invalid TypeSafe response; no action executed.")
+        raise ValueError("Invalid decision response; no action executed.")
     return answer
 
 
@@ -79,6 +89,16 @@ def action_space(actions):
 
 
 def choose(state, goal, history):
+    endpoint = os.environ.get("AZURE_ENDPOINT", "").strip()
+    resource = urlsplit(endpoint)
+    if (resource.scheme != "https" or not resource.hostname or resource.username or resource.password
+            or resource.path not in {"", "/"} or resource.query or resource.fragment):
+        raise ValueError("AZURE_ENDPOINT must be an HTTPS resource URL without credentials, a path, or a query.")
+    key = os.environ.get("AZURE_API_KEY", "").strip()
+    token = os.environ.get("AZURE_ENTRA_TOKEN", "").strip()
+    if not key and not token:
+        raise ValueError("Set AZURE_API_KEY or AZURE_ENTRA_TOKEN; no decision requested.")
+    headers = {"api-key": key} if key else {"Authorization": f"Bearer {token}"}
     elements, targets, controls = action_space(state["actions"])
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
@@ -89,23 +109,29 @@ def choose(state, goal, history):
     operations.update({key: value["label"] for key, value in controls.items()})
     operations.update(DONE="Every requirement is visibly satisfied.", BLOCKED="No supported operation can progress.")
     questions = {
-        "operation": {"type": "choice", "criteria": operations, "instructions": {"goal": goal, "rules": NEXT_ACTION}}
+        "operation": {"type": "choice", "criteria": operations,
+                      "instructions": json.dumps({"goal": goal, "rules": NEXT_ACTION}, ensure_ascii=False)}
     }
     for operation, candidates in targets.items():
+        # Azure needs 2-255 options; a sole compatible target needs no prediction.
+        if len(candidates) == 1:
+            continue
         questions[operation.lower() + "_target"] = {
             "type": "choice",
             "criteria": {
-                index: {
+                index: json.dumps({
                     "element": f"[{index}] {a['label']}",
                     "current_value": a.get("current_value", a.get("value", "")),
                     **{k: a[k] for k in ("role", "checked", "selected", "expanded") if k in a},
-                }
+                }, ensure_ascii=False)
                 for index, a in candidates.items()
             },
-            "instructions": {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]},
+            "instructions": json.dumps(
+                {"goal": goal, "operation": operation, "rules": [NEXT_ACTION, TARGET]}, ensure_ascii=False
+            ),
         }
     body = {
-        "model": os.environ.get("TYPESAFE_MODEL", "jev-latest"),
+        "model": os.environ.get("AZURE_DEPLOYMENT_NAME", "decision-1"),
         "state": {
             "page": {k: state[k] for k in ("url", "title", "text")},
             "elements": elements,
@@ -116,15 +142,23 @@ def choose(state, goal, history):
         "questions": questions,
     }
     started = time.perf_counter()
-    result = post_json("https://api.typesafe.ai/v1/systemone", os.environ["TYPESAFE_API_KEY"], body)
+    result = post_json(endpoint.rstrip("/") + "/providers/microsoft/v1/systemone", headers, body)
+    if (not isinstance(result, dict) or not isinstance(result.get("answers"), dict)
+            or not isinstance(result.get("model"), str) or not result["model"]):
+        raise ValueError("Invalid decision response; no action executed.")
     operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
     target_answer = None
     probabilities = {}
     if operation in targets:
-        # Unused target heads cannot cause an action. Validate the head selected by the operation.
-        target_answer = validate_choice(result["answers"].get(operation.lower() + "_target", {}), targets[operation])
+        candidates = targets[operation]
+        if len(candidates) == 1:
+            only = next(iter(candidates))
+            target_answer = {"choice": only, "confidence": 1.0, "probabilities": {only: 1.0}}
+        else:
+            # Unused target heads cannot cause an action. Validate only the selected operation's head.
+            target_answer = validate_choice(result["answers"].get(operation.lower() + "_target", {}), candidates)
         target = target_answer["choice"]
         choice = targets[operation][target]["id"]
         probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
@@ -169,7 +203,7 @@ def field_text(context):
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
-        key,
+        {"Authorization": f"Bearer {key}"},
         {
             "model": model,
             "max_tokens": 1024,

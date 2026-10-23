@@ -203,9 +203,12 @@ The scope is the existing eight-operation Decision integrations, not the entire 
    git clone --branch feat/openai-decisions-api https://github.com/geekjapan/browser-use.git
    git clone --branch feat/openai-decisions-api https://github.com/geekjapan/jev-ultrafast.git
    uv python install 3.12
+   uv lock --project browser-use
    uv sync --frozen --project browser-use
    uv sync --frozen --project jev-ultrafast
    ```
+
+   browser-useは `uv.lock` をGit管理していないため、初回だけ `uv lock` で生成します。解決される依存バージョンは導入時点に依存します。生成したロックを保持し、以降の実行は `--frozen` を使ってください。各検証結果にはロックのハッシュと実行時の主要バージョンが記録されます。
 
    Chrome/Chromiumがない場合は、Browser Useの既存インストールコマンドでChromiumを取得できます。
 

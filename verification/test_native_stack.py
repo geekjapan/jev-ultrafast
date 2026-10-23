@@ -388,13 +388,14 @@ async def test_unicode_select_target_in_full_native_path(browser, local_page):
     )
     await evaluate(browser, "document.body.innerHTML=" + json.dumps(html))
     observed = await browser.get_browser_state_summary(cached=False, include_screenshot=False)
-    runner = DecisionAgent("Select the second B option", MockDecision(), browser=browser)
+    runner = DecisionAgent("Select the first B option", MockDecision(), browser=browser)
     candidates = runner._targets(observed).get("select", {})
-    chosen = next(value for key, value in candidates.items() if key.endswith(":1"))
+    assert not any(key.endswith(":1") for key in candidates), "Ambiguous second option must not authorize input"
+    chosen = next(value for key, value in candidates.items() if key.endswith(":0"))
     action = runner._action_model.model_validate({"select_dropdown": {"index": chosen.index, "text": chosen.text}})
     result = await runner.tools.act(action, browser)
     assert not result.error
-    assert await evaluate(browser, "document.querySelector('#unicode').selectedIndex") == 1
+    assert await evaluate(browser, "document.querySelector('#unicode').selectedIndex") == 0
 
 
 class MockDecision:

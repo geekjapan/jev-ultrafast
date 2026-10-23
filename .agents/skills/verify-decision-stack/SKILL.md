@@ -34,7 +34,7 @@ The Chromium checks use a fresh headless BrowserSession. The real Jev executor i
 
 ## Source synchronization
 
-Last source review: browser-use `8dedd37c40028f427c8978ad17030054cb7fb428`; jev-ultrafast `7a324d832163ada718c32bd52d14bff3e6b795dc`.
+Last source review: browser-use `76e5847814d6ba5b83e5b9948ffb6648c2d76feb`; jev-ultrafast `ee28161b54378c1b5d7e97ed683c284cd734d43e`.
 
 `verification/sources.json` lists covered files. `report.json` records their SHA-256 digests and checkout commits on each run. Review source changes against these commits before treating prior evidence as current. Advance the review commits only after checking that the assertions, extracted JavaScript, mutation needles and stated assumptions still describe the implementation. Use `/maintain-formal-verification-skill` for this maintenance workflow.
 
@@ -44,4 +44,4 @@ If a failure is in a product function, retain the counterexample and document it
 
 This is bounded exhaustive testing, not an unbounded proof or a claim of correctness for every website. Callback internals outside each modeled boundary, concurrent direct library callers, browser/model races after the last check, arbitrary Unicode/options, provider reasoning quality, cloud browsers, CAPTCHA, authenticated sites and platform-specific behavior remain outside the stated bounds. Native handlers can make several CDP calls; the suite does not claim exactly-once DOM side effects.
 
-For the known native select counterexample, read `verification/FINDINGS.md`. Do not mark a release verified while its regression still fails. Publication, merges, live API spending and changes to either upstream repository require their own authorization.
+For the resolved native select counterexample and its regression contract, read `verification/FINDINGS.md`. Do not mark a release verified while its regression still fails. Publication, merges, live API spending and changes to either upstream repository require their own authorization.

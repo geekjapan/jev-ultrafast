@@ -223,7 +223,7 @@ The scope is the existing eight-operation Decision integrations, not the entire 
    uv run --no-project --python 3.12 python verification/run.py --browser-use ../browser-use
    ```
 
-   テスト専用のブラウザープロファイルを作成するため、既存のChromeプロファイルをコピーする必要はありません。結果は `artifacts/verification/REPORT.md` と `report.json` に出力されます。既知のドロップダウン不具合が未修正の版では2件失敗し、終了コードは1になります。これは導入失敗ではなく、[記録済みの不具合](verification/FINDINGS.md)の検出です。その他の失敗は個別のログで確認してください。
+   テスト専用のブラウザープロファイルを作成するため、既存のChromeプロファイルをコピーする必要はありません。結果は `artifacts/verification/REPORT.md` と `report.json` に出力されます。両方のフォークを更新した修正版では346件が成功し、終了コードは0になります。古いbrowser-useではドロップダウンの回帰テストが失敗するため、[修正記録](verification/FINDINGS.md)と使用中のコミットを確認してください。その他の失敗は個別のログで確認してください。
 
 4. コーディングエージェントには、このリポジトリを作業フォルダーとして開き、`.agents/skills/verify-decision-stack/SKILL.md` を読んで検証するよう指示します。スキル一覧から見つからない場合も、このファイルを直接指定できます。ファイル内の手順と `verification/` が一組なので、`SKILL.md` だけを別の場所へコピーしないでください。
 

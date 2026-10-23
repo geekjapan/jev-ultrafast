@@ -157,3 +157,17 @@ def test_text_helper_keeps_bearer_authentication(azure, monkeypatch):
     assert model.field_text({"goal": "Search Tokyo"})[0] == "東京"
     assert requests[0].headers["authorization"] == "Bearer text-test-key"
     assert "api-key" not in requests[0].headers
+
+
+@pytest.mark.parametrize("reasoning", ["none", "low"])
+def test_openai_text_helper_uses_chat_completions_parameters(azure, monkeypatch, reasoning):
+    requests, reply = azure
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "text-test-key")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("TEXT_MODEL_REASONING", reasoning)
+    reply["body"] = {"choices": [{"message": {"content": '{"text":"Ada"}'}}]}
+    assert model.field_text({"goal": "Enter Ada"})[0] == "Ada"
+    body = json.loads(requests[0].content)
+    assert "reasoning" not in body
+    if reasoning == "low":
+        assert body["reasoning_effort"] == "low"

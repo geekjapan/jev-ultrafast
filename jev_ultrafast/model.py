@@ -200,6 +200,10 @@ def field_text(context):
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
         reasoning = {"reasoning": {"enabled": False}}
+    if urlsplit(base).hostname == "api.openai.com":
+        # Chat Completions uses reasoning_effort, not the proxy-specific reasoning object.
+        effort = os.environ.get("TEXT_MODEL_REASONING", "low")
+        reasoning = {} if effort == "none" else {"reasoning_effort": effort}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",

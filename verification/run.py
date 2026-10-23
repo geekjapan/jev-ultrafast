@@ -130,7 +130,10 @@ print(json.dumps({'python': platform.python_version(), **{
         str(browser_use / "tests/ci/test_dom_live_input_value.py"),
     ]
     pytest_args = ["-q", "--asyncio-mode=auto", "--timeout=60", "--tb=short", "-o", "log_cli=false", "-o", "addopts="]
-    run("browser-tests", uv + ["pytest", *browser_suite, *pytest_args, f"--junitxml={output / 'browser.xml'}"])
+    run(
+        "browser-tests",
+        uv + ["python", "-m", "pytest", *browser_suite, *pytest_args, f"--junitxml={output / 'browser.xml'}"],
+    )
     run(
         "jev-tests",
         ["uv", "run", "--frozen", "pytest", "tests", "-q", "--tb=short", f"--junitxml={output / 'jev.xml'}"],
@@ -138,7 +141,17 @@ print(json.dumps({'python': platform.python_version(), **{
     )
     run(
         "stack-tests",
-        uv + ["pytest", "verification", "--rootdir", str(ROOT), *pytest_args, f"--junitxml={output / 'stack.xml'}"],
+        uv
+        + [
+            "python",
+            "-m",
+            "pytest",
+            "verification",
+            "--rootdir",
+            str(ROOT),
+            *pytest_args,
+            f"--junitxml={output / 'stack.xml'}",
+        ],
     )
     cases = read_cases(output / "browser.xml") + read_cases(output / "jev.xml") + read_cases(output / "stack.xml")
     mutations = {
@@ -154,6 +167,8 @@ print(json.dumps({'python': platform.python_version(), **{
             f"mutation-{mutation}",
             uv
             + [
+                "python",
+                "-m",
                 "pytest",
                 "-p",
                 "verification.plugin_mutations",

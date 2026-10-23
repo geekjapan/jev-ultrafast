@@ -204,3 +204,50 @@ def test_openai_selection_does_not_change_text_credentials(openai, monkeypatch):
     assert str(requests[0].url) == "https://text.example/v1/chat/completions"
     assert requests[0].headers["authorization"] == "Bearer text-unused-key"
     assert "api-key" not in requests[0].headers
+
+
+@pytest.mark.parametrize("provider", ["azure", "openai"])
+@pytest.mark.parametrize("operation,expected", [
+    ("CLICK", "c2"), ("TYPE_TEXT", "t2"), ("SELECT", "s2"),
+    ("WAIT", "wait"), ("SCROLL_UP", "scroll_up"), ("SCROLL_DOWN", "scroll_down"),
+    ("DONE", "DONE"), ("BLOCKED", "BLOCKED"),
+])
+def test_provider_operation_parity(monkeypatch, provider, operation, expected):
+    monkeypatch.setenv("DECISION_PROVIDER", provider)
+    monkeypatch.setenv("OPENAI_API_KEY", "offline-key")
+    monkeypatch.setenv("AZURE_ENDPOINT", "https://resource.test")
+    monkeypatch.setenv("AZURE_API_KEY", "offline-key")
+    state = page()
+    state["actions"] = [
+        {"id": "c1", "node": 1, "kind": "click", "label": "Back"},
+        {"id": "c2", "node": 2, "kind": "click", "label": "Next"},
+        {"id": "t1", "node": 3, "kind": "fill", "label": "First name"},
+        {"id": "t2", "node": 4, "kind": "fill", "label": "Last name"},
+        {"id": "s1", "node": 5, "kind": "select", "label": "Red", "value": "red"},
+        {"id": "s2", "node": 5, "kind": "select", "label": "Blue", "value": "blue"},
+        *({"id": kind, "kind": kind, "label": kind} for kind in ("wait", "scroll_up", "scroll_down")),
+    ]
+    requests = []
+
+    def handle(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        questions = ({q["name"]: [c["value"] for c in q["choices"]] for q in body["questions"]}
+                     if provider == "openai"
+                     else {name: list(q["criteria"]) for name, q in body["questions"].items()})
+        answers = []
+        for name, candidates in questions.items():
+            selected = operation if name == "operation" else candidates[-1]
+            answers.append(answer(name, selected, {value: float(value == selected) for value in candidates}))
+        payload = (answers if provider == "openai" else {
+            a["name"]: {**a, "probabilities": {p["value"]: p["probability"] for p in a["probabilities"]}}
+            for a in answers
+        })
+        return httpx.Response(200, json={"model": "test", "answers": payload})
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+        monkeypatch.setattr(model, "CLIENT", client)
+        result = model.choose(state, "Complete the task", [])
+    assert result["operation"] == operation
+    assert result["choice"] == expected
+    assert len(requests) == 1

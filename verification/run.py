@@ -77,6 +77,7 @@ def main():
     environment.update(
         BROWSER_USE_REPO=str(browser_use),
         ANONYMIZED_TELEMETRY="false",
+        PYTHONUTF8="1",
         PYTHONPATH=os.pathsep.join([str(ROOT), str(browser_use)]),
         STACK_VERIFY_OUTPUT=str(output),
     )
@@ -96,13 +97,15 @@ def main():
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
             )
             code, text = process.returncode, process.stdout
         except subprocess.TimeoutExpired as error:
             code = 124
             text = str(error.stdout or "") + "\nVerification stage timed out; not a pass."
-        (output / f"{name}.log").write_text(text)
+        (output / f"{name}.log").write_text(text, encoding="utf-8")
         row = {"name": name, "command": command, "exit_code": code, "seconds": round(time.monotonic() - started, 2)}
         stages.append(row)
         print(f"{name}: {'PASS' if code == 0 else 'FAIL'}", flush=True)
@@ -219,8 +222,10 @@ print('PASS: runtime assets and CLI entrypoint are packaged')
             str(output),
         ],
     )
-    features = feature_results(json.loads((ROOT / "verification/features.json").read_text()), cases, stages)
-    covered = json.loads((ROOT / "verification/sources.json").read_text())
+    features = feature_results(
+        json.loads((ROOT / "verification/features.json").read_text(encoding="utf-8")), cases, stages
+    )
+    covered = json.loads((ROOT / "verification/sources.json").read_text(encoding="utf-8"))
     sources = []
     for repository, files in covered.items():
         root = ROOT if repository == "jev-ultrafast" else browser_use
@@ -241,7 +246,9 @@ print('PASS: runtime assets and CLI entrypoint are packaged')
         "stages": stages,
         "sources": sources,
         "toolchain": toolchain,
-        "chromium": json.loads((output / "chromium.json").read_text()) if (output / "chromium.json").exists() else None,
+        "chromium": json.loads((output / "chromium.json").read_text(encoding="utf-8"))
+        if (output / "chromium.json").exists()
+        else None,
         "verification_files": {
             str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
             for path in sorted((ROOT / "verification").glob("*"))
@@ -256,7 +263,7 @@ print('PASS: runtime assets and CLI entrypoint are packaged')
             "native_select_disabled_masks": 4,
         },
     }
-    (output / "report.json").write_text(json.dumps(result, indent=2))
+    (output / "report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     lines = [
         "# Decision stack verification",
         "",
@@ -279,7 +286,7 @@ print('PASS: runtime assets and CLI entrypoint are packaged')
         "Browser use and Jev are separate executors. Harness CDP is routed to an isolated test browser.",
         "A failing assertion remains a failure; skipped, missing, and unexecuted checks never count as pass.",
     ]
-    (output / "REPORT.md").write_text("\n".join(lines) + "\n")
+    (output / "REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print(f"{'PASS' if passed else 'FAIL'}: {len(cases)} test cases; report: {output / 'REPORT.md'}")
     return 0 if passed else 1
 

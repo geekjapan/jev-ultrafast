@@ -11,6 +11,8 @@ Run from the jev-ultrafast repository:
 python3 verification/run.py --browser-use ../browser-use
 ```
 
+On Windows, run `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows.ps1 -Mode verify` instead. This enables UTF-8 for Python and resolves an installed uv executable even when a Scoop shim is broken. For the authenticated local inspector, use `-Mode demo -Provider openai` or `-Provider azure`; credentials stay in the private per-user file described in README.md, outside the checkout.
+
 Use an explicit checkout path when the forks are not siblings. Both checkouts must have their uv lockfiles and the Decision API implementation. `uv` and Node.js must be installed. The runner uses Python 3.12, the locked Browser Use test dependencies, and an ephemeral editable install of this Jev checkout so its declared Browser Harness/HTTP2 dependencies are available. It does not change either lockfile or install dependencies globally.
 
 The browser-use fork does not track `uv.lock`. On a fresh clone, first run `uv lock --project ../browser-use`, then `uv sync --frozen --project ../browser-use` and `uv sync --frozen` from this repository. Keep the generated lock for later runs. A newly resolved lock can differ from the original machine; compare recorded lock hashes and runtime versions when reproducing a result.

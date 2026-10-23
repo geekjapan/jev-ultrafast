@@ -165,3 +165,15 @@ def test_helper_maximum_length(monkeypatch):
         model, "post_json", lambda *_: {"choices": [{"message": {"content": json.dumps({"text": "x" * 2000})}}]}
     )
     assert len(model.field_text({})[0]) == 2000
+
+
+def test_openai_text_helper_omits_unsupported_reasoning(monkeypatch):
+    monkeypatch.setenv("TEXT_MODEL_API_KEY", "offline")
+    monkeypatch.setenv("TEXT_MODEL_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("TEXT_MODEL", "gpt-4.1-mini")
+    monkeypatch.setenv("TEXT_MODEL_REASONING", "none")
+    request = Mock(return_value={"choices": [{"message": {"content": '{"text":"Ada"}'}}]})
+    monkeypatch.setattr(model, "post_json", request)
+    assert model.field_text({})[0] == "Ada"
+    body = request.call_args.args[2]
+    assert "reasoning" not in body and "reasoning_effort" not in body

@@ -270,7 +270,7 @@ async def test_select_candidates_against_native_javascript(browser):
     """Every offered candidate must select its advertised position in the actual native JS."""
     import browser_use.browser.watchdogs.default_action_watchdog as watchdog
 
-    tree = ast.parse(Path(watchdog.__file__).read_text())
+    tree = ast.parse(Path(watchdog.__file__).read_text(encoding="utf-8"))
     scripts = [
         item.value.value
         for item in ast.walk(tree)

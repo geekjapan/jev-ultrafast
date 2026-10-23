@@ -194,7 +194,7 @@ The scope is the existing eight-operation Decision integrations, not the entire 
 
 このリポジトリには、実行用の `verify-decision-stack` スキルとテストスイートを同梱しています。スキルを生成した `create-formal-verification-skill` を別途インストールする必要はありません。
 
-1. Git、uv、Node.js、Google ChromeまたはChromiumを用意します。実行確認済みの環境はmacOSです。Windows・Linuxでの動作は未確認です。
+1. Git、uv、Node.js、Google ChromeまたはChromiumを用意します。macOSとWindowsで実行確認済みです。Linuxでの動作は未確認です。
 2. 以下のように、両方の **geekjapanフォーク** を同じ親フォルダーへ取得します。Decision API対応は現時点でこの機能ブランチにあるため、`main` ではなく指定ブランチを使います。
 
    ```bash
@@ -223,13 +223,30 @@ The scope is the existing eight-operation Decision integrations, not the entire 
    uv run --no-project --python 3.12 python verification/run.py --browser-use ../browser-use
    ```
 
-   テスト専用のブラウザープロファイルを作成するため、既存のChromeプロファイルをコピーする必要はありません。結果は `artifacts/verification/REPORT.md` と `report.json` に出力されます。両方のフォークを更新した修正版では346件が成功し、終了コードは0になります。古いbrowser-useではドロップダウンの回帰テストが失敗するため、[修正記録](verification/FINDINGS.md)と使用中のコミットを確認してください。その他の失敗は個別のログで確認してください。
+   テスト専用のブラウザープロファイルを作成するため、既存のChromeプロファイルをコピーする必要はありません。結果は `artifacts/verification/REPORT.md` と `report.json` に出力されます。両方のフォークを更新した修正版では347件が成功し、終了コードは0になります。古いbrowser-useではドロップダウンの回帰テストが失敗するため、[修正記録](verification/FINDINGS.md)と使用中のコミットを確認してください。その他の失敗は個別のログで確認してください。
 
 4. コーディングエージェントには、このリポジトリを作業フォルダーとして開き、`.agents/skills/verify-decision-stack/SKILL.md` を読んで検証するよう指示します。スキル一覧から見つからない場合も、このファイルを直接指定できます。ファイル内の手順と `verification/` が一組なので、`SKILL.md` だけを別の場所へコピーしないでください。
 
 配置先が隣接していない場合は、`--browser-use` に実際のチェックアウト先を指定します。更新時は両方のフォークを更新し、スキルの「Source synchronization」にある確認済みコミットと差分を照合してから再実行してください。上流の `browser-use/*` リポジトリへのpushや変更は不要です。
 
 **秘密情報を持ち込まないこと:** `.env`、`.env.*`（公開用の `.env.example` を除く）、APIキー、トークン、Cookie、ブラウザープロファイル、`.venv`、`artifacts/`、個人のエージェント設定を別PCへの共有物やGitコミットに含めないでください。この検証で使う認証文字列はテスト用のダミーです。実サービスへ接続する場合の資格情報は、各PCで別途安全に設定してください。
+
+### Windowsでの起動
+
+前述の準備を終えたら、リポジトリ内で以下を実行します。起動スクリプトはUTF-8を指定し、Scoopのショートカットが壊れている場合もインストール済みのuv本体を探します。OS全体の設定は変更しません。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows.ps1 -Mode verify
+```
+
+実APIを使う画面は、Git管理外の `%USERPROFILE%\.config\decision-stack\.env` に資格情報を設定してから起動します。このファイルは利用ユーザーとSYSTEMだけが読めるよう権限を制限してください。ファイルの内容をGitや実行ログへ出力しないでください。
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/run-windows.ps1 -Mode demo -Provider openai
+# または -Provider azure
+```
+
+サーバー起動後、`http://127.0.0.1:8766` を開きます。同時に起動する画面は1つにしてください。デモは一時プロファイルのChromeを使用し、通常のChromeプロファイルとは分離します。終了はCtrl+Cです。OpenAIの入力補助モデルを使用する場合は `TEXT_MODEL_BASE_URL=https://api.openai.com/v1`、`TEXT_MODEL_REASONING=none` と、利用可能な `TEXT_MODEL` を設定します。
 
 ---
 

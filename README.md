@@ -178,6 +178,56 @@ uv build
 
 Tests are offline. `uv run python scripts/check_guards.py` checks real controls in a local browser without model calls. Live examples and recording scripts make paid API calls. `scripts/record_flights.py <new-folder>` captures original browser timestamps; `scripts/render_demo.py <recording-folder>` renders that verified run at 1× and crops out the Google account strip. Credentials and raw traces stay ignored.
 
+### Verify both Decision implementations
+
+With the matching `geekjapan/browser-use` checkout beside this repository:
+
+```bash
+python3 verification/run.py --browser-use ../browser-use
+```
+
+The suite combines both existing regression suites, bounded enumeration of real Python code, isolated Chromium workflows, inspector checks, and deliberate broken-code variants. It does not call paid APIs or use the user's Chrome session. Results and the feature matrix are written to `artifacts/verification/REPORT.md` and `report.json`; any skipped, missing, failed, or undetected mutation check prevents success.
+
+The scope is the existing eight-operation Decision integrations, not the entire generative Browser Use Agent. Current findings remain failing tests; see [verification/FINDINGS.md](verification/FINDINGS.md). Source synchronization and precise bounds are documented in the [project verification skill](.agents/skills/verify-decision-stack/SKILL.md).
+
+### 別のPCへ検証スキルとテストを導入する
+
+このリポジトリには、実行用の `verify-decision-stack` スキルとテストスイートを同梱しています。スキルを生成した `create-formal-verification-skill` を別途インストールする必要はありません。
+
+1. Git、uv、Node.js、Google ChromeまたはChromiumを用意します。実行確認済みの環境はmacOSです。Windows・Linuxでの動作は未確認です。
+2. 以下のように、両方の **geekjapanフォーク** を同じ親フォルダーへ取得します。Decision API対応は現時点でこの機能ブランチにあるため、`main` ではなく指定ブランチを使います。
+
+   ```bash
+   mkdir decision-stack
+   cd decision-stack
+   git clone --branch feat/openai-decisions-api https://github.com/geekjapan/browser-use.git
+   git clone --branch feat/openai-decisions-api https://github.com/geekjapan/jev-ultrafast.git
+   uv python install 3.12
+   uv sync --frozen --project browser-use
+   uv sync --frozen --project jev-ultrafast
+   ```
+
+   Chrome/Chromiumがない場合は、Browser Useの既存インストールコマンドでChromiumを取得できます。
+
+   ```bash
+   uv run --project browser-use browser-use install
+   ```
+
+3. `jev-ultrafast` フォルダーで検証を実行します。クラウドアカウント、APIキー、`.env` は不要です。初回は依存パッケージのダウンロードにネット接続が必要です。
+
+   ```bash
+   cd jev-ultrafast
+   uv run --no-project --python 3.12 python verification/run.py --browser-use ../browser-use
+   ```
+
+   テスト専用のブラウザープロファイルを作成するため、既存のChromeプロファイルをコピーする必要はありません。結果は `artifacts/verification/REPORT.md` と `report.json` に出力されます。既知のドロップダウン不具合が未修正の版では2件失敗し、終了コードは1になります。これは導入失敗ではなく、[記録済みの不具合](verification/FINDINGS.md)の検出です。その他の失敗は個別のログで確認してください。
+
+4. コーディングエージェントには、このリポジトリを作業フォルダーとして開き、`.agents/skills/verify-decision-stack/SKILL.md` を読んで検証するよう指示します。スキル一覧から見つからない場合も、このファイルを直接指定できます。ファイル内の手順と `verification/` が一組なので、`SKILL.md` だけを別の場所へコピーしないでください。
+
+配置先が隣接していない場合は、`--browser-use` に実際のチェックアウト先を指定します。更新時は両方のフォークを更新し、スキルの「Source synchronization」にある確認済みコミットと差分を照合してから再実行してください。上流の `browser-use/*` リポジトリへのpushや変更は不要です。
+
+**秘密情報を持ち込まないこと:** `.env`、`.env.*`（公開用の `.env.example` を除く）、APIキー、トークン、Cookie、ブラウザープロファイル、`.venv`、`artifacts/`、個人のエージェント設定を別PCへの共有物やGitコミットに含めないでください。この検証で使う認証文字列はテスト用のダミーです。実サービスへ接続する場合の資格情報は、各PCで別途安全に設定してください。
+
 ---
 
 [Browser Use](https://github.com/browser-use/browser-use) · [Browser Harness](https://github.com/browser-use/browser-harness) · [TypeSafe speculative fan-out](https://docs.typesafe.ai/patterns/fan-out)

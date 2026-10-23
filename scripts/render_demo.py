@@ -18,6 +18,7 @@ assert state["verification"]["passed"] and not state["recording_errors"]
 frames = [(0, Image.open(source / "frames/000000.jpg").convert("RGB"))]
 frames += sorted((int(p.stem), Image.open(p).convert("RGB")) for p in (source / "screencast").glob("*.jpg"))
 end = state["elapsed_ms"]
+decision_model = state["decisions"][0]["model"]
 folder = source / "video-frames"
 folder.mkdir(parents=True, exist_ok=False)
 font_path = "/System/Library/Fonts/Supplemental/Arial.ttf"
@@ -46,7 +47,7 @@ for i in range(round((end + 500) * 30 / 1000)):
     canvas = Image.new("RGB", (1536, 1000), "#f3f4ec")
     d = ImageDraw.Draw(canvas)
     d.text((36, 26), "browser use", font=font(23, True), fill=ink)
-    d.text((186, 27), "×  TypeSafe", font=font(22), fill=muted)
+    d.text((186, 27), f"×  {decision_model}", font=font(22), fill=muted)
     d.rounded_rectangle((1287, 24, 1499, 59), radius=17, fill="#dfebd9")
     d.text((1310, 32), "REAL WEB  ·  1× SPEED", font=font(14, True), fill=green)
     d.text((36, 80), f"Zürich → London. In {end / 1000:.1f} seconds.", font=font(43, True), fill=ink)
@@ -57,7 +58,7 @@ for i in range(round((end + 500) * 30 / 1000)):
     d.text((145, 201), "google.com/travel/flights", font=mono(13), fill="#d4d6d5")
     # Omit Google account controls in every frame. No content from the task area is redrawn.
     canvas.paste(screenshot.crop((0, 64, 1120, 780)), (36, 226))
-    d.text((1192, 206), "JEV ULTRAFAST", font=font(16, True), fill=green)
+    d.text((1192, 206), "BROWSER AGENT", font=font(16, True), fill=green)
     d.text((1189, 242), f"{t / 1000:05.2f}", font=mono(52), fill=ink)
     d.text((1193, 307), "SECONDS ELAPSED", font=font(13, True), fill=muted)
     history = [h for h in state["history"] if h["executed_ms"] <= t]
@@ -89,7 +90,7 @@ for i in range(round((end + 500) * 30 / 1000)):
     d.line((37, 960, 37 + (1498 - 37) * t / end, 960), fill=green, width=3)
     d.text(
         (37, 973),
-        f"Operation + index by Jev. Text by {state['text_calls'][0]['model'].split('/')[-1]}. "
+        f"Operation + index by {decision_model}. Text by {state['text_calls'][0]['model'].split('/')[-1]}. "
         "Original timing; waits included.",
         font=font(14),
         fill=muted,

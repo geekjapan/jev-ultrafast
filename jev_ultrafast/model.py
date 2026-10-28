@@ -1,4 +1,4 @@
-"""Microsoft Decision 1 makes choices; an OpenAI-compatible model writes field values."""
+"""Azure or OpenAI makes choices; a separate text model writes field values."""
 
 import json
 import math
@@ -88,7 +88,51 @@ def action_space(actions):
     return elements, targets, controls
 
 
-def choose(state, goal, history):
+def decision_settings():
+    provider = os.environ.get("DECISION_PROVIDER", "azure").strip()
+    if provider not in {"azure", "openai"}:
+        raise ValueError("DECISION_PROVIDER must be azure or openai; no decision requested.")
+    model = (os.environ.get("OPENAI_DECISION_MODEL", "gpt-6-luna") if provider == "openai"
+             else os.environ.get("AZURE_DEPLOYMENT_NAME", "decision-1"))
+    return provider, model
+
+
+def openai_answers(result, questions):
+    """Adapt named answers without changing the raw provider evidence."""
+    answers = result.get("answers")
+    if not isinstance(answers, list):
+        raise ValueError("Invalid decision response; no action executed.")
+    normalized = {}
+    for answer in answers:
+        if not isinstance(answer, dict):
+            raise ValueError("Invalid decision response; no action executed.")
+        name = answer.get("name")
+        if not isinstance(name, str) or name not in questions or name in normalized:
+            raise ValueError("Invalid decision response; no action executed.")
+        converted = dict(answer)
+        if answer.get("type") == "choice":
+            probabilities = answer.get("probabilities")
+            if not isinstance(answer.get("choice"), str) or not isinstance(probabilities, list):
+                raise ValueError("Invalid decision response; no action executed.")
+            mapped = {}
+            for probability in probabilities:
+                if (not isinstance(probability, dict) or not isinstance(probability.get("value"), str)
+                        or probability["value"] in mapped or "probability" not in probability):
+                    raise ValueError("Invalid decision response; no action executed.")
+                mapped[probability["value"]] = probability["probability"]
+            converted["probabilities"] = mapped
+        normalized[name] = converted
+    return normalized
+
+
+def decision_connection():
+    provider, _ = decision_settings()
+    if provider == "openai":
+        key = os.environ.get("OPENAI_API_KEY", "").strip()
+        if not key:
+            raise ValueError("Set OPENAI_API_KEY; no decision requested.")
+        return "https://api.openai.com/v1/decisions", {"Authorization": f"Bearer {key}"}
+
     endpoint = os.environ.get("AZURE_ENDPOINT", "").strip()
     resource = urlsplit(endpoint)
     if (resource.scheme != "https" or not resource.hostname or resource.username or resource.password
@@ -99,6 +143,12 @@ def choose(state, goal, history):
     if not key and not token:
         raise ValueError("Set AZURE_API_KEY or AZURE_ENTRA_TOKEN; no decision requested.")
     headers = {"api-key": key} if key else {"Authorization": f"Bearer {token}"}
+    return endpoint.rstrip("/") + "/providers/microsoft/v1/systemone", headers
+
+
+def choose(state, goal, history):
+    provider, decision_model = decision_settings()
+    url, headers = decision_connection()
     elements, targets, controls = action_space(state["actions"])
     labels = {
         "CLICK": "Click an element, button, menu option, autocomplete suggestion, or calendar day.",
@@ -113,7 +163,7 @@ def choose(state, goal, history):
                       "instructions": json.dumps({"goal": goal, "rules": NEXT_ACTION}, ensure_ascii=False)}
     }
     for operation, candidates in targets.items():
-        # Azure needs 2-255 options; a sole compatible target needs no prediction.
+        # A sole compatible target needs no prediction.
         if len(candidates) == 1:
             continue
         questions[operation.lower() + "_target"] = {
@@ -131,7 +181,7 @@ def choose(state, goal, history):
             ),
         }
     body = {
-        "model": os.environ.get("AZURE_DEPLOYMENT_NAME", "decision-1"),
+        "model": decision_model,
         "state": {
             "page": {k: state[k] for k in ("url", "title", "text")},
             "elements": elements,
@@ -141,12 +191,26 @@ def choose(state, goal, history):
         },
         "questions": questions,
     }
+    if provider == "openai":
+        body = {
+            "model": decision_model,
+            "input": json.dumps(body["state"], ensure_ascii=False),
+            "questions": [
+                {"name": name, "type": "choice", "instructions": question["instructions"],
+                 "choices": [{"value": value, "description": description}
+                             for value, description in question["criteria"].items()]}
+                for name, question in questions.items()
+            ],
+        }
     started = time.perf_counter()
-    result = post_json(endpoint.rstrip("/") + "/providers/microsoft/v1/systemone", headers, body)
-    if (not isinstance(result, dict) or not isinstance(result.get("answers"), dict)
+    result = post_json(url, headers, body)
+    if (not isinstance(result, dict)
             or not isinstance(result.get("model"), str) or not result["model"]):
         raise ValueError("Invalid decision response; no action executed.")
-    operation_answer = validate_choice(result["answers"].get("operation", {}), operations)
+    answers = openai_answers(result, questions) if provider == "openai" else result.get("answers")
+    if not isinstance(answers, dict):
+        raise ValueError("Invalid decision response; no action executed.")
+    operation_answer = validate_choice(answers.get("operation", {}), operations)
     operation = operation_answer["choice"]
     target = None
     target_answer = None
@@ -158,7 +222,7 @@ def choose(state, goal, history):
             target_answer = {"choice": only, "confidence": 1.0, "probabilities": {only: 1.0}}
         else:
             # Unused target heads cannot cause an action. Validate only the selected operation's head.
-            target_answer = validate_choice(result["answers"].get(operation.lower() + "_target", {}), candidates)
+            target_answer = validate_choice(answers.get(operation.lower() + "_target", {}), candidates)
         target = target_answer["choice"]
         choice = targets[operation][target]["id"]
         probabilities = {a["id"]: target_answer["probabilities"][index] for index, a in targets[operation].items()}
@@ -199,7 +263,7 @@ def field_text(context):
     model = os.environ.get("TEXT_MODEL", "deepseek-chat")
     reasoning = {"thinking": {"type": "disabled"}} if "api.deepseek.com/" in base else {"reasoning": {"effort": "low"}}
     if os.environ.get("TEXT_MODEL_REASONING") == "none":
-        reasoning = {"reasoning": {"enabled": False}}
+        reasoning = {} if urlsplit(base).hostname == "api.openai.com" else {"reasoning": {"enabled": False}}
     started = time.perf_counter()
     result = post_json(
         base + "/chat/completions",
